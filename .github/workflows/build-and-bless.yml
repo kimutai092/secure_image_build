@@ -1,0 +1,84 @@
+name: Build → ECR → Snyk → Bless → Bump Helm
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: write
+  packages: read
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+  ECR_REPO: ${{ secrets.ECR_REPO }}
+
+jobs:
+  build_and_bless:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gha-ecr
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image tag
+        run: echo "IMAGE_SHA=${GITHUB_SHA::12}" >> $GITHUB_ENV
+
+      - name: Build & push image
+        run: |
+          docker build -t "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:${IMAGE_SHA}" ./apps/fastapi-ecommerce
+          docker push "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:${IMAGE_SHA}"
+
+      - name: Snyk scan (ECR image)
+        uses: snyk/actions/docker@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          image: ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPO }}:${{ env.IMAGE_SHA }}
+          args: --severity-threshold=high --fail-on=all
+
+      # Needed because scripts/snyk_scan_and_bless.sh calls the Snyk CLI
+      - name: Install Snyk CLI
+        uses: snyk/actions/setup@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      - name: Snyk auth
+        run: snyk auth "${{ secrets.SNYK_TOKEN }}"
+
+      - name: Bless image (retag to -blessed)
+        run: |
+          chmod +x scripts/snyk_scan_and_bless.sh
+          ./scripts/snyk_scan_and_bless.sh
+
+      - name: Install yq (static binary)
+        run: |
+          YQ_VERSION=v4.44.3
+          wget -q "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -O yq
+          sudo install -m 0755 yq /usr/local/bin/yq
+
+      - name: Update Helm values.yaml with blessed tag
+        run: |
+          BLESSED="${IMAGE_SHA}-blessed"
+          yq -i '.image.tag = strenv(BLESSED)' charts/ecommerce-app/values.yaml
+          echo "Updated image.tag to ${BLESSED}"
+
+      - name: Commit & push Helm bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add charts/ecommerce-app/values.yaml
+          git commit -m "ci: bump image tag to ${IMAGE_SHA}-blessed [skip ci]" || echo "No changes"
+          git push
+
+

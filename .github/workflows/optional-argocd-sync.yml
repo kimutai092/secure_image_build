@@ -1,0 +1,11 @@
+name: Optional ArgoCD Sync
+on: { workflow_dispatch: {} }
+permissions: { contents: read }
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger ArgoCD app sync
+        run: |
+          APP="${{ secrets.ARGOCD_APP_NAME || 'ecommerce-app' }}"
+          curl -ks -X POST "https://${{ secrets.ARGOCD_SERVER }}/api/v1/applications/${APP}/sync"             -H "Authorization: Bearer ${{ secrets.ARGOCD_AUTH_TOKEN }}"             -H "Content-Type: application/json"             -d '{"revision":"main"}'

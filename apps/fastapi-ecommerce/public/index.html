@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>E‑Commerce Demo (FastAPI)</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 24px; max-width: 800px; margin: auto; }
+    h1 { margin-bottom: 8px; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 16px; margin-top: 12px; }
+    .row { display: flex; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
+    input { padding: 8px; flex: 1; min-width: 160px; }
+    button { padding: 10px 14px; border-radius: 8px; border: 1px solid #333; cursor: pointer; }
+    table { width:100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { border-bottom: 1px solid #eee; padding: 6px; text-align: left; }
+    .receipt { background:#f8f9fa; padding:12px; border-radius: 8px; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <h1>E‑Commerce Demo</h1>
+  <p>Add an item and checkout to get a simple receipt. Metrics at <code>/metrics</code>.</p>
+  <div class="card">
+    <div class="row">
+      <input id="name" placeholder="Item name" />
+      <input id="price" type="number" step="0.01" placeholder="Price" />
+      <input id="qty" type="number" step="1" placeholder="Qty" value="1" />
+      <button onclick="addItem()">Add</button>
+    </div>
+    <table id="itemsTbl">
+      <thead><tr><th>Name</th><th>Price</th><th>Qty</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="row">
+      <input id="taxRate" type="number" step="0.01" placeholder="Tax rate (0.07 = 7%)" value="0.07" />
+      <button onclick="checkout()">Checkout</button>
+    </div>
+    <div id="receipt" class="receipt" style="display:none;"></div>
+  </div>
+
+  <script>
+    const items = [];
+    function addItem() {
+      const n = document.getElementById('name').value;
+      const p = parseFloat(document.getElementById('price').value);
+      const q = parseInt(document.getElementById('qty').value || '1', 10);
+      if (!n || isNaN(p) || isNaN(q)) return alert('Fill all item fields');
+      items.push({ name:n, price:p, qty:q });
+      renderItems();
+      document.getElementById('name').value=''; document.getElementById('price').value=''; document.getElementById('qty').value='1';
+    }
+    function renderItems(){
+      const tbody = document.querySelector('#itemsTbl tbody');
+      tbody.innerHTML = items.map(i => `<tr><td>${i.name}</td><td>$${i.price.toFixed(2)}</td><td>${i.qty}</td></tr>`).join('');
+    }
+    async function checkout(){
+      const taxRate = parseFloat(document.getElementById('taxRate').value || '0.07');
+      const res = await fetch('/api/checkout', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({items, taxRate})});
+      const r = await res.json();
+      const div = document.getElementById('receipt');
+      div.style.display='block';
+      div.innerHTML = `<strong>Receipt</strong><br>
+        Subtotal: $${r.subtotal.toFixed(2)}<br>
+        Tax (${(r.taxRate*100).toFixed(0)}%): $${r.tax.toFixed(2)}<br>
+        <strong>Total: $${r.total.toFixed(2)}</strong><br>
+        <small>${r.timestamp}</small>`;
+    }
+  </script>
+</body>
+</html>

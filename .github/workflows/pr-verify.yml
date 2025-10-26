@@ -1,0 +1,27 @@
+name: PR Verify (Build + Snyk)
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build docker image (local)
+        run: docker build -t pr-ecommerce:temp ./apps/fastapi-ecommerce
+
+      - name: Snyk container test
+        uses: snyk/actions/docker@v3
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          image: pr-ecommerce:temp
+          args: --severity-threshold=high --fail-on=all
+

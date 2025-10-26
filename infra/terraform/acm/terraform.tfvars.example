@@ -1,0 +1,4 @@
+region         = "us-east-1"
+domain_name    = "shop.example.com"
+hosted_zone_id = "Z123EXAMPLE"
+san_domains    = ["argocd.example.com", "grafana.example.com", "prom.example.com"]
